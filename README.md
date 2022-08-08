@@ -1,3 +1,5 @@
+This makes using float32 also work, and keeps pytorch interface
+
 # FlashAttention
 This repository provides the official implementation of FlashAttention from the
 following paper.
