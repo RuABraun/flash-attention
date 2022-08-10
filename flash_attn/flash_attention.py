@@ -111,7 +111,7 @@ class FlashMHA(nn.Module):
             qkv = torch.stack([query, key, value], dim=2)
         else:
             qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.num_heads)
-        if qkv.dtype != torch.float16:
+        if qkv.dtype == torch.float16:
             context, attn_weights = self.inner_attn(qkv, key_padding_mask=key_padding_mask,
                                                     need_weights=False, causal=self.causal)
         else:
@@ -119,21 +119,21 @@ class FlashMHA(nn.Module):
             query, key, value = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]
             bs = query.size(0)
             seqlen = query.size(1)
-            query = query.transpose(1, 2).view(bs*self.num_heads, seqlen, self.head_dim)
-            key = key.transpose(1, 2).view(bs*self.num_heads, seqlen, self.head_dim)
-            attn_weights = torch.bmm(query, key.transpose(1, 2))  # b*h s s
+            query = query.transpose(1, 2).reshape(bs*self.num_heads, seqlen, self.head_dim)
+            key = key.transpose(1, 2).reshape(bs*self.num_heads, seqlen, self.head_dim)
+            attn_weights = torch.bmm(query, key.transpose(1, 2)) / self.head_dim ** 0.5 # -> b*h s s
             attn_weights = attn_weights.view(bs, self.num_heads, seqlen, seqlen)
 
             key_padding_mask = key_padding_mask.view(bs, 1, 1, seqlen)
-            attn_weights[~key_padding_mask.expand(-1, 1, seqlen, -1)] = float("-inf")
+            attn_weights[~key_padding_mask.expand(-1, self.num_heads, seqlen, -1)] = float("-inf")
             attn_weights = nn.functional.softmax(attn_weights, dim=-1)
             # b h s s
             attn_weights = attn_weights.view(bs*self.num_heads, seqlen, seqlen)
             # b*h s s
             attn_weights = nn.functional.dropout(attn_weights, self.attention_dropout, training=self.training)
 
-            value = value.transpose(1, 2).view(bs * self.num_heads, seqlen, self.head_dim)
+            value = value.transpose(1, 2).reshape(bs * self.num_heads, seqlen, self.head_dim)
             context = torch.bmm(attn_weights, value)  # -> b*h s d
             context = context.view(bs, self.num_heads, seqlen, self.head_dim).transpose(1, 2)
-            
+
         return self.out_proj(rearrange(context, 'b s h d -> b s (h d)')), attn_weights
