@@ -99,7 +99,7 @@ class FlashMHA(nn.Module):
         self.inner_attn = FlashAttention(attention_dropout=attention_dropout, **factory_kwargs)
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias, **factory_kwargs)
 
-    def forward(self, x, x_ignored_1_, x_ignored_2_, key_padding_mask=None, need_weights=False):
+    def forward(self, x, key_padding_mask=None, need_weights=False):
         """x: (batch, seqlen, hidden_dim) (where hidden_dim = num heads * head dim)
         key_padding_mask: bool tensor of shape (batch, seqlen)
         """
@@ -136,4 +136,4 @@ class FlashMHA(nn.Module):
             context = torch.bmm(attn_weights, value)  # -> b*h s d
             context = context.view(bs, self.num_heads, seqlen, self.head_dim).transpose(1, 2)
 
-        return self.out_proj(rearrange(context, 'b s h d -> b s (h d)')), attn_weights
+        return self.out_proj(rearrange(context, 'b s h d -> b s (h d)'))
